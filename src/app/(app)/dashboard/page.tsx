@@ -72,14 +72,20 @@ export default async function DashboardPage({
     .groupBy(enquiries.status);
   const statusMap = new Map(byStatusRows.map((r) => [r.status, r.count]));
 
-  // District breakdown (top 10)
-  const byDistrictRows = await db
-    .select({ district: enquiries.district, count: sql<number>`count(*)::int` })
+  // District leaderboard
+  const districtRows = await db
+    .select({
+      district: enquiries.district,
+      total: sql<number>`count(*)::int`,
+      connected: sql<number>`count(*) filter (where ${inArray(enquiries.status, STATUS_BUCKETS.connected as unknown as string[])})::int`,
+      converted: sql<number>`count(*) filter (where ${inArray(enquiries.status, STATUS_BUCKETS.converted as unknown as string[])})::int`,
+      completed: sql<number>`count(*) filter (where ${inArray(enquiries.status, STATUS_BUCKETS.completed as unknown as string[])})::int`,
+      cancelled: sql<number>`count(*) filter (where ${inArray(enquiries.status, STATUS_BUCKETS.cancelled as unknown as string[])})::int`,
+    })
     .from(enquiries)
     .where(where)
     .groupBy(enquiries.district)
-    .orderBy(sql`count(*) desc`)
-    .limit(10);
+    .orderBy(sql`count(*) desc`);
 
   // Payment mode breakdown
   const byPaymentRows = await db
@@ -236,29 +242,6 @@ export default async function DashboardPage({
 
         <Card>
           <CardHeader>
-            <CardTitle>Top districts</CardTitle>
-            <CardDescription>Enquiry count by district (top 10)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {byDistrictRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No data in this period.</p>
-            ) : (
-              <ul className="divide-y">
-                {byDistrictRows.map((r) => (
-                  <li key={r.district} className="flex items-center justify-between py-2 text-sm">
-                    <span>{r.district}</span>
-                    <span className="font-medium">{r.count}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
             <CardTitle>Payment summary</CardTitle>
             <CardDescription>Counts by payment mode</CardDescription>
           </CardHeader>
@@ -280,31 +263,77 @@ export default async function DashboardPage({
             )}
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent enquiries</CardTitle>
-            <CardDescription>Most recently added in this period</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recent.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No enquiries in this period.</p>
-            ) : (
-              <ul className="divide-y">
-                {recent.map((e) => (
-                  <li key={e.id} className="flex items-center justify-between py-2 text-sm">
-                    <Link href={`/enquiries/${e.id}`} className="hover:underline">
-                      <span className="font-medium">{e.customerName}</span>
-                      <span className="text-muted-foreground"> — {e.district}</span>
-                    </Link>
-                    <Badge className={STATUS_BADGE[e.status as (typeof STATUSES)[number]] ?? ""}>{e.status}</Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>District leaderboard</CardTitle>
+          <CardDescription>Per-district performance in this period</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>District</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Connected</TableHead>
+                <TableHead className="text-right">Converted</TableHead>
+                <TableHead className="text-right">Completed</TableHead>
+                <TableHead className="text-right">Cancelled</TableHead>
+                <TableHead className="text-right">Conv. rate</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {districtRows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                    No data in this period.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                districtRows.map((r) => {
+                  const rate = r.total === 0 ? 0 : Math.round((r.converted / r.total) * 100);
+                  return (
+                    <TableRow key={r.district}>
+                      <TableCell className="font-medium">{r.district}</TableCell>
+                      <TableCell className="text-right">{r.total}</TableCell>
+                      <TableCell className="text-right">{r.connected}</TableCell>
+                      <TableCell className="text-right">{r.converted}</TableCell>
+                      <TableCell className="text-right">{r.completed}</TableCell>
+                      <TableCell className="text-right">{r.cancelled}</TableCell>
+                      <TableCell className="text-right font-medium">{rate}%</TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent enquiries</CardTitle>
+          <CardDescription>Most recently added in this period</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {recent.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No enquiries in this period.</p>
+          ) : (
+            <ul className="divide-y">
+              {recent.map((e) => (
+                <li key={e.id} className="flex items-center justify-between py-2 text-sm">
+                  <Link href={`/enquiries/${e.id}`} className="hover:underline">
+                    <span className="font-medium">{e.customerName}</span>
+                    <span className="text-muted-foreground"> — {e.district}</span>
+                  </Link>
+                  <Badge className={STATUS_BADGE[e.status as (typeof STATUSES)[number]] ?? ""}>{e.status}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {isAdmin && (
         <Card>

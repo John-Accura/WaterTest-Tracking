@@ -4,7 +4,7 @@ type Status = (typeof STATUSES)[number];
 
 // Tweak these buckets to change how the dashboard counts performance.
 export const STATUS_BUCKETS = {
-  connected: ["Confirmed", "Ongoing", "Collected", "Received at Lab", "Result Ready"] satisfies Status[],
+  connected: ["Confirmed", "Ongoing", "Postponed", "Collected", "Received at Lab", "Result Ready"] satisfies Status[],
   converted: ["Collected", "Received at Lab", "Result Ready"] satisfies Status[],
   completed: ["Result Ready"] satisfies Status[],
   cancelled: ["Cancelled"] satisfies Status[],
