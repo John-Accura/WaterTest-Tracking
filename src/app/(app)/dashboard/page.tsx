@@ -72,6 +72,23 @@ export default async function DashboardPage({
     .groupBy(enquiries.status);
   const statusMap = new Map(byStatusRows.map((r) => [r.status, r.count]));
 
+  // District breakdown (top 10)
+  const byDistrictRows = await db
+    .select({ district: enquiries.district, count: sql<number>`count(*)::int` })
+    .from(enquiries)
+    .where(where)
+    .groupBy(enquiries.district)
+    .orderBy(sql`count(*) desc`)
+    .limit(10);
+
+  // Payment mode breakdown
+  const byPaymentRows = await db
+    .select({ paymentMode: enquiries.paymentMode, count: sql<number>`count(*)::int` })
+    .from(enquiries)
+    .where(where)
+    .groupBy(enquiries.paymentMode)
+    .orderBy(sql`count(*) desc`);
+
   // Agent leaderboard (admin only)
   const agentRows = isAdmin
     ? await db
@@ -214,6 +231,53 @@ export default async function DashboardPage({
                 </li>
               ))}
             </ul>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top districts</CardTitle>
+            <CardDescription>Enquiry count by district (top 10)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {byDistrictRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No data in this period.</p>
+            ) : (
+              <ul className="divide-y">
+                {byDistrictRows.map((r) => (
+                  <li key={r.district} className="flex items-center justify-between py-2 text-sm">
+                    <span>{r.district}</span>
+                    <span className="font-medium">{r.count}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Payment summary</CardTitle>
+            <CardDescription>Counts by payment mode</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {byPaymentRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No data in this period.</p>
+            ) : (
+              <ul className="divide-y">
+                {byPaymentRows.map((r) => (
+                  <li
+                    key={r.paymentMode ?? "_none"}
+                    className="flex items-center justify-between py-2 text-sm"
+                  >
+                    <span>{r.paymentMode ?? <span className="text-muted-foreground">Not set</span>}</span>
+                    <span className="font-medium">{r.count}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
 
