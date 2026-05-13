@@ -1,28 +1,40 @@
 import Link from "next/link";
-import { and, desc, eq, ilike, or, sql, SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lte, or, sql, SQL } from "drizzle-orm";
 import { auth } from "../../../../auth";
 import { db } from "@/lib/db";
 import { enquiries, users } from "@/lib/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { STATUS_BADGE, STATUSES } from "@/lib/constants";
+import { STATUSES } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { Plus } from "lucide-react";
+import { InlineStatus } from "@/components/inline-status";
+import { InlineTech } from "@/components/inline-tech";
 
 export const dynamic = "force-dynamic";
 
-export default async function EnquiriesPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string }> }) {
+export default async function EnquiriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; status?: string; from?: string; to?: string; agentId?: string }>;
+}) {
   const session = await auth();
   const user = session!.user;
   const isAdmin = user.role === "admin";
   const params = await searchParams;
   const q = params.q?.trim() ?? "";
   const status = params.status?.trim() ?? "";
+  const from = params.from?.trim() ?? "";
+  const to = params.to?.trim() ?? "";
+  const agentId = params.agentId?.trim() ?? "";
 
   const filters: SQL[] = [];
-  if (!isAdmin) filters.push(eq(enquiries.agentId, Number(user.id)));
+  if (!isAdmin) {
+    filters.push(eq(enquiries.agentId, Number(user.id)));
+  } else if (agentId && agentId !== "all") {
+    filters.push(eq(enquiries.agentId, Number(agentId)));
+  }
   if (q) {
     filters.push(
       or(
@@ -34,6 +46,8 @@ export default async function EnquiriesPage({ searchParams }: { searchParams: Pr
     );
   }
   if (status) filters.push(eq(enquiries.status, status));
+  if (from) filters.push(gte(enquiries.dateOfEnquiry, from));
+  if (to) filters.push(lte(enquiries.dateOfEnquiry, to));
 
   const rows = await db
     .select({
@@ -46,11 +60,20 @@ export default async function EnquiriesPage({ searchParams }: { searchParams: Pr
       dateOfEnquiry: enquiries.dateOfEnquiry,
       waterSource: enquiries.waterSource,
       agentName: enquiries.agentName,
+      assignedTechnician: enquiries.assignedTechnician,
     })
     .from(enquiries)
     .where(filters.length ? and(...filters) : sql`true`)
     .orderBy(desc(enquiries.dateOfEnquiry), desc(enquiries.id))
     .limit(500);
+
+  const agentList = isAdmin
+    ? await db
+        .select({ id: users.id, name: users.name, agentName: users.agentName })
+        .from(users)
+        .where(eq(users.role, "agent"))
+        .orderBy(users.name)
+    : [];
 
   return (
     <div className="space-y-4">
@@ -58,7 +81,7 @@ export default async function EnquiriesPage({ searchParams }: { searchParams: Pr
         <div>
           <h1 className="text-2xl font-semibold">Enquiries</h1>
           <p className="text-sm text-muted-foreground">
-            {isAdmin ? "All agents' enquiries." : "Your enquiries only."}
+            {isAdmin ? "All agents' enquiries." : "Your enquiries only."} {rows.length} shown.
           </p>
         </div>
         <Button asChild>
@@ -68,22 +91,55 @@ export default async function EnquiriesPage({ searchParams }: { searchParams: Pr
         </Button>
       </div>
 
-      <form className="flex flex-wrap gap-2">
-        <Input name="q" defaultValue={q} placeholder="Search name, mobile, area, district…" className="max-w-sm" />
-        <select
-          name="status"
-          defaultValue={status}
-          className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-        >
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <Button type="submit" variant="secondary">Filter</Button>
-        {(q || status) && (
+      <form className="flex flex-wrap items-end gap-2 rounded-lg border bg-white p-3">
+        <div className="flex flex-col">
+          <label className="text-xs text-muted-foreground">Search</label>
+          <Input name="q" defaultValue={q} placeholder="name, mobile, area…" className="w-60" />
+        </div>
+        <div className="flex flex-col">
+          <label className="text-xs text-muted-foreground">From</label>
+          <Input type="date" name="from" defaultValue={from} className="w-40" />
+        </div>
+        <div className="flex flex-col">
+          <label className="text-xs text-muted-foreground">To</label>
+          <Input type="date" name="to" defaultValue={to} className="w-40" />
+        </div>
+        <div className="flex flex-col">
+          <label className="text-xs text-muted-foreground">Status</label>
+          <select
+            name="status"
+            defaultValue={status}
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+          >
+            <option value="">All statuses</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        {isAdmin && (
+          <div className="flex flex-col">
+            <label className="text-xs text-muted-foreground">Agent</label>
+            <select
+              name="agentId"
+              defaultValue={agentId || "all"}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              <option value="all">All agents</option>
+              {agentList.map((a) => (
+                <option key={a.id} value={String(a.id)}>
+                  {a.agentName ?? a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <Button type="submit" variant="secondary">
+          Apply
+        </Button>
+        {(q || status || from || to || (agentId && agentId !== "all")) && (
           <Button variant="ghost" asChild>
             <Link href="/enquiries">Clear</Link>
           </Button>
@@ -100,6 +156,7 @@ export default async function EnquiriesPage({ searchParams }: { searchParams: Pr
               <TableHead>District / Area</TableHead>
               <TableHead>Source</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Technician</TableHead>
               {isAdmin && <TableHead>Agent</TableHead>}
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -107,8 +164,8 @@ export default async function EnquiriesPage({ searchParams }: { searchParams: Pr
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 8 : 7} className="text-center text-sm text-muted-foreground">
-                  No enquiries found.
+                <TableCell colSpan={isAdmin ? 9 : 8} className="text-center text-sm text-muted-foreground">
+                  No enquiries match your filters.
                 </TableCell>
               </TableRow>
             ) : (
@@ -123,7 +180,10 @@ export default async function EnquiriesPage({ searchParams }: { searchParams: Pr
                   </TableCell>
                   <TableCell>{r.waterSource}</TableCell>
                   <TableCell>
-                    <Badge className={STATUS_BADGE[r.status as (typeof STATUSES)[number]] ?? ""}>{r.status}</Badge>
+                    <InlineStatus id={r.id} status={r.status} />
+                  </TableCell>
+                  <TableCell>
+                    <InlineTech id={r.id} value={r.assignedTechnician} />
                   </TableCell>
                   {isAdmin && <TableCell>{r.agentName}</TableCell>}
                   <TableCell className="text-right">

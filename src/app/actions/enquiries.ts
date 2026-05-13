@@ -7,6 +7,7 @@ import { auth } from "../../../auth";
 import { db } from "@/lib/db";
 import { enquiries } from "@/lib/schema";
 import { enquirySchema } from "@/lib/validators";
+import { STATUSES } from "@/lib/constants";
 
 function fd(formData: FormData) {
   const o: Record<string, string> = {};
@@ -103,4 +104,35 @@ export async function deleteEnquiry(id: number) {
   revalidatePath("/enquiries");
   revalidatePath("/dashboard");
   redirect("/enquiries");
+}
+
+export async function quickUpdate(
+  id: number,
+  fields: { status?: string; assignedTechnician?: string },
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await auth();
+  if (!session?.user) return { ok: false, error: "Unauthorized" };
+  const isAdmin = session.user.role === "admin";
+
+  const updates: Partial<typeof enquiries.$inferInsert> = { updatedAt: new Date() };
+  if (fields.status !== undefined) {
+    if (!STATUSES.includes(fields.status as (typeof STATUSES)[number])) {
+      return { ok: false, error: "Invalid status" };
+    }
+    updates.status = fields.status;
+  }
+  if (fields.assignedTechnician !== undefined) {
+    const trimmed = fields.assignedTechnician.trim();
+    updates.assignedTechnician = trimmed.length > 0 ? trimmed : null;
+  }
+
+  const where = isAdmin
+    ? eq(enquiries.id, id)
+    : and(eq(enquiries.id, id), eq(enquiries.agentId, Number(session.user.id)));
+
+  const result = await db.update(enquiries).set(updates).where(where).returning({ id: enquiries.id });
+  if (result.length === 0) return { ok: false, error: "Not found or not permitted" };
+  revalidatePath("/enquiries");
+  revalidatePath("/dashboard");
+  return { ok: true };
 }
