@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "../../../../../auth";
 import { db } from "@/lib/db";
 import { enquiries } from "@/lib/schema";
@@ -17,9 +17,14 @@ export default async function EnquiryDetailPage({ params }: { params: Promise<{ 
   const user = session!.user;
   const isAdmin = user.role === "admin";
 
+  // Soft-deleted rows are not viewable on the detail page; restore from the recycle bin first.
   const filter = isAdmin
-    ? eq(enquiries.id, enquiryId)
-    : and(eq(enquiries.id, enquiryId), eq(enquiries.agentId, Number(user.id)));
+    ? and(eq(enquiries.id, enquiryId), isNull(enquiries.deletedAt))
+    : and(
+        eq(enquiries.id, enquiryId),
+        eq(enquiries.agentId, Number(user.id)),
+        isNull(enquiries.deletedAt),
+      );
 
   const [row] = await db.select().from(enquiries).where(filter).limit(1);
   if (!row) notFound();

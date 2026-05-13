@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "../../../auth";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
@@ -23,7 +23,12 @@ export async function createUser(formData: FormData): Promise<{ ok: boolean; err
 
   const { email, name, agentName, password, role } = parsed.data;
   const lowered = email.toLowerCase();
-  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, lowered)).limit(1);
+  // Block reuse only against *active* accounts; allow reusing the email of a soft-deleted user.
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.email, lowered), isNull(users.deletedAt)))
+    .limit(1);
   if (existing) return { ok: false, error: "Email already in use" };
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -43,6 +48,15 @@ export async function deleteUser(id: number) {
   if (!session?.user || session.user.role !== "admin") throw new Error("Forbidden");
   if (Number(session.user.id) === id) throw new Error("Cannot delete yourself");
 
-  await db.delete(users).where(eq(users.id, id));
+  // Soft delete: stamp deletedAt so the user can't log in but their enquiries stay intact.
+  await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id));
+  revalidatePath("/admin/users");
+}
+
+export async function restoreUser(id: number) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") throw new Error("Forbidden");
+
+  await db.update(users).set({ deletedAt: null }).where(eq(users.id, id));
   revalidatePath("/admin/users");
 }

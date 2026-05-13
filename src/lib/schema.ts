@@ -13,6 +13,7 @@ export const users = pgTable(
     agentName: varchar("agent_name", { length: 120 }),
     role: roleEnum("role").notNull().default("agent"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => ({ emailIdx: uniqueIndex("users_email_idx").on(t.email) }),
 );
@@ -37,6 +38,7 @@ export const enquiries = pgTable("enquiries", {
   remarks: text("remarks"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 export const usersRelations = relations(users, ({ many }) => ({

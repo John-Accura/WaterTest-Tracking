@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, desc, eq, gte, ilike, lte, or, sql, SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, isNotNull, isNull, lte, or, sql, SQL } from "drizzle-orm";
 import { auth } from "../../../../auth";
 import { db } from "@/lib/db";
 import { enquiries, users } from "@/lib/schema";
@@ -8,16 +8,24 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { STATUSES } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import { Plus } from "lucide-react";
+import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { InlineStatus } from "@/components/inline-status";
 import { InlineTech } from "@/components/inline-tech";
+import { restoreEnquiry } from "@/app/actions/enquiries";
 
 export const dynamic = "force-dynamic";
 
 export default async function EnquiriesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; from?: string; to?: string; agentId?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    agentId?: string;
+    show?: string;
+  }>;
 }) {
   const session = await auth();
   const user = session!.user;
@@ -28,8 +36,9 @@ export default async function EnquiriesPage({
   const from = params.from?.trim() ?? "";
   const to = params.to?.trim() ?? "";
   const agentId = params.agentId?.trim() ?? "";
+  const showDeleted = isAdmin && params.show === "deleted";
 
-  const filters: SQL[] = [];
+  const filters: SQL[] = [showDeleted ? isNotNull(enquiries.deletedAt) : isNull(enquiries.deletedAt)];
   if (!isAdmin) {
     filters.push(eq(enquiries.agentId, Number(user.id)));
   } else if (agentId && agentId !== "all") {
@@ -79,19 +88,43 @@ export default async function EnquiriesPage({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Enquiries</h1>
+          <h1 className="text-2xl font-semibold">
+            {showDeleted ? "Recycle bin" : "Enquiries"}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            {isAdmin ? "All agents' enquiries." : "Your enquiries only."} {rows.length} shown.
+            {showDeleted
+              ? "Deleted enquiries — admin only. Restore to put a row back into circulation."
+              : isAdmin
+                ? "All agents' enquiries."
+                : "Your enquiries only."}{" "}
+            {rows.length} shown.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/enquiries/new">
-            <Plus className="h-4 w-4" /> New enquiry
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && !showDeleted && (
+            <Button variant="outline" asChild>
+              <Link href="/enquiries?show=deleted">
+                <Trash2 className="h-4 w-4" /> Recycle bin
+              </Link>
+            </Button>
+          )}
+          {isAdmin && showDeleted && (
+            <Button variant="outline" asChild>
+              <Link href="/enquiries">Back to active</Link>
+            </Button>
+          )}
+          {!showDeleted && (
+            <Button asChild>
+              <Link href="/enquiries/new">
+                <Plus className="h-4 w-4" /> New enquiry
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       <form className="flex flex-wrap items-end gap-2 rounded-lg border bg-white p-3">
+        {showDeleted && <input type="hidden" name="show" value="deleted" />}
         <div className="flex flex-col">
           <label className="text-xs text-muted-foreground">Search</label>
           <Input name="q" defaultValue={q} placeholder="name, mobile, area…" className="w-60" />
@@ -141,7 +174,7 @@ export default async function EnquiriesPage({
         </Button>
         {(q || status || from || to || (agentId && agentId !== "all")) && (
           <Button variant="ghost" asChild>
-            <Link href="/enquiries">Clear</Link>
+            <Link href={showDeleted ? "/enquiries?show=deleted" : "/enquiries"}>Clear</Link>
           </Button>
         )}
       </form>
@@ -180,16 +213,32 @@ export default async function EnquiriesPage({
                   </TableCell>
                   <TableCell>{r.waterSource}</TableCell>
                   <TableCell>
-                    <InlineStatus id={r.id} status={r.status} />
+                    {showDeleted ? (
+                      <span className="rounded bg-secondary px-2 py-1 text-xs">{r.status}</span>
+                    ) : (
+                      <InlineStatus id={r.id} status={r.status} />
+                    )}
                   </TableCell>
                   <TableCell>
-                    <InlineTech id={r.id} value={r.assignedTechnician} />
+                    {showDeleted ? (
+                      <span className="text-xs text-muted-foreground">{r.assignedTechnician ?? "—"}</span>
+                    ) : (
+                      <InlineTech id={r.id} value={r.assignedTechnician} />
+                    )}
                   </TableCell>
                   {isAdmin && <TableCell>{r.agentName}</TableCell>}
                   <TableCell className="text-right">
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/enquiries/${r.id}`}>Open</Link>
-                    </Button>
+                    {showDeleted ? (
+                      <form action={restoreEnquiry.bind(null, r.id)}>
+                        <Button type="submit" size="sm" variant="outline">
+                          <RotateCcw className="h-3.5 w-3.5" /> Restore
+                        </Button>
+                      </form>
+                    ) : (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/enquiries/${r.id}`}>Open</Link>
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

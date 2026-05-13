@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, eq, gte, inArray, lte, sql, SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql, SQL } from "drizzle-orm";
 import { auth } from "../../../../auth";
 import { db } from "@/lib/db";
 import { enquiries, users } from "@/lib/schema";
@@ -33,7 +33,9 @@ export default async function DashboardPage({
   const agentIdParam = params.agentId?.trim() ?? "";
 
   // Scope: agents only see themselves; admin can filter by agent or see everyone.
+  // Soft-deleted rows never appear on the dashboard.
   const scopeFilters: SQL[] = [
+    isNull(enquiries.deletedAt),
     gte(enquiries.dateOfEnquiry, from),
     lte(enquiries.dateOfEnquiry, to),
   ];
@@ -113,11 +115,12 @@ export default async function DashboardPage({
           enquiries,
           and(
             eq(enquiries.agentId, users.id),
+            isNull(enquiries.deletedAt),
             gte(enquiries.dateOfEnquiry, from),
             lte(enquiries.dateOfEnquiry, to),
           ),
         )
-        .where(eq(users.role, "agent"))
+        .where(and(eq(users.role, "agent"), isNull(users.deletedAt)))
         .groupBy(users.id, users.name, users.agentName)
         .orderBy(sql`count(${enquiries.id}) desc`)
     : [];
@@ -134,7 +137,7 @@ export default async function DashboardPage({
     ? await db
         .select({ id: users.id, name: users.name, agentName: users.agentName })
         .from(users)
-        .where(eq(users.role, "agent"))
+        .where(and(eq(users.role, "agent"), isNull(users.deletedAt)))
         .orderBy(users.name)
     : [];
 

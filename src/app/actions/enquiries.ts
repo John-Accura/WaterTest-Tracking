@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "../../../auth";
 import { db } from "@/lib/db";
 import { enquiries } from "@/lib/schema";
@@ -13,6 +13,13 @@ function fd(formData: FormData) {
   const o: Record<string, string> = {};
   for (const [k, v] of formData.entries()) o[k] = typeof v === "string" ? v : "";
   return o;
+}
+
+/** Where-clause that excludes soft-deleted rows; agents are additionally limited to their own. */
+function rowFilter(id: number, session: { user: { id: string; role: "admin" | "agent" } }) {
+  const base = and(eq(enquiries.id, id), isNull(enquiries.deletedAt));
+  if (session.user.role === "admin") return base;
+  return and(base, eq(enquiries.agentId, Number(session.user.id)));
 }
 
 export async function createEnquiry(formData: FormData): Promise<{ ok: boolean; error?: string }> {
@@ -50,17 +57,12 @@ export async function createEnquiry(formData: FormData): Promise<{ ok: boolean; 
 export async function updateEnquiry(id: number, formData: FormData): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
   if (!session?.user) return { ok: false, error: "Unauthorized" };
-  const isAdmin = session.user.role === "admin";
 
   const parsed = enquirySchema.safeParse(fd(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid data" };
   }
   const data = parsed.data;
-
-  const where = isAdmin
-    ? eq(enquiries.id, id)
-    : and(eq(enquiries.id, id), eq(enquiries.agentId, Number(session.user.id)));
 
   const result = await db
     .update(enquiries)
@@ -81,7 +83,7 @@ export async function updateEnquiry(id: number, formData: FormData): Promise<{ o
       remarks: data.remarks || null,
       updatedAt: new Date(),
     })
-    .where(where)
+    .where(rowFilter(id, session as { user: { id: string; role: "admin" | "agent" } }))
     .returning({ id: enquiries.id });
 
   if (result.length === 0) return { ok: false, error: "Not found or not permitted" };
@@ -94,16 +96,29 @@ export async function updateEnquiry(id: number, formData: FormData): Promise<{ o
 export async function deleteEnquiry(id: number) {
   const session = await auth();
   if (!session?.user) throw new Error("Unauthorized");
-  const isAdmin = session.user.role === "admin";
 
-  const where = isAdmin
-    ? eq(enquiries.id, id)
-    : and(eq(enquiries.id, id), eq(enquiries.agentId, Number(session.user.id)));
+  // Soft delete: stamp deletedAt instead of removing the row.
+  await db
+    .update(enquiries)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(rowFilter(id, session as { user: { id: string; role: "admin" | "agent" } }));
 
-  await db.delete(enquiries).where(where);
   revalidatePath("/enquiries");
   revalidatePath("/dashboard");
   redirect("/enquiries");
+}
+
+export async function restoreEnquiry(id: number) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") throw new Error("Forbidden");
+
+  await db
+    .update(enquiries)
+    .set({ deletedAt: null, updatedAt: new Date() })
+    .where(eq(enquiries.id, id));
+
+  revalidatePath("/enquiries");
+  revalidatePath("/dashboard");
 }
 
 export async function quickUpdate(
@@ -112,7 +127,6 @@ export async function quickUpdate(
 ): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
   if (!session?.user) return { ok: false, error: "Unauthorized" };
-  const isAdmin = session.user.role === "admin";
 
   const updates: Partial<typeof enquiries.$inferInsert> = { updatedAt: new Date() };
   if (fields.status !== undefined) {
@@ -126,11 +140,11 @@ export async function quickUpdate(
     updates.assignedTechnician = trimmed.length > 0 ? trimmed : null;
   }
 
-  const where = isAdmin
-    ? eq(enquiries.id, id)
-    : and(eq(enquiries.id, id), eq(enquiries.agentId, Number(session.user.id)));
-
-  const result = await db.update(enquiries).set(updates).where(where).returning({ id: enquiries.id });
+  const result = await db
+    .update(enquiries)
+    .set(updates)
+    .where(rowFilter(id, session as { user: { id: string; role: "admin" | "agent" } }))
+    .returning({ id: enquiries.id });
   if (result.length === 0) return { ok: false, error: "Not found or not permitted" };
   revalidatePath("/enquiries");
   revalidatePath("/dashboard");
