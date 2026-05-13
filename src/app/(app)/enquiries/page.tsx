@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { STATUSES } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import { Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Download, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { InlineStatus } from "@/components/inline-status";
 import { InlineTech } from "@/components/inline-tech";
 import { restoreEnquiry } from "@/app/actions/enquiries";
@@ -101,6 +101,20 @@ export default async function EnquiriesPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <a
+              href={`/api/export/enquiries?${new URLSearchParams({
+                ...(q ? { q } : {}),
+                ...(status ? { status } : {}),
+                ...(from ? { from } : {}),
+                ...(to ? { to } : {}),
+                ...(agentId && agentId !== "all" ? { agentId } : {}),
+                ...(showDeleted ? { show: "deleted" } : {}),
+              }).toString()}`}
+            >
+              <Download className="h-4 w-4" /> Export
+            </a>
+          </Button>
           {isAdmin && !showDeleted && (
             <Button variant="outline" asChild>
               <Link href="/enquiries?show=deleted">
