@@ -22,6 +22,9 @@ export async function GET(req: NextRequest) {
   if (!session?.user) return new NextResponse("Unauthorized", { status: 401 });
   const user = session.user;
   const isAdmin = user.role === "admin";
+  // Export is admin-only. Hide the button on the page AND block the route here,
+  // so an agent guessing the URL still gets a 403.
+  if (!isAdmin) return new NextResponse("Forbidden", { status: 403 });
 
   const sp = req.nextUrl.searchParams;
   const q = sp.get("q")?.trim() ?? "";

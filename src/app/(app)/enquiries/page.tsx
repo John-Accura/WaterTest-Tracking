@@ -101,20 +101,22 @@ export default async function EnquiriesPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <a
-              href={`/api/export/enquiries?${new URLSearchParams({
-                ...(q ? { q } : {}),
-                ...(status ? { status } : {}),
-                ...(from ? { from } : {}),
-                ...(to ? { to } : {}),
-                ...(agentId && agentId !== "all" ? { agentId } : {}),
-                ...(showDeleted ? { show: "deleted" } : {}),
-              }).toString()}`}
-            >
-              <Download className="h-4 w-4" /> Export
-            </a>
-          </Button>
+          {isAdmin && (
+            <Button variant="outline" asChild>
+              <a
+                href={`/api/export/enquiries?${new URLSearchParams({
+                  ...(q ? { q } : {}),
+                  ...(status ? { status } : {}),
+                  ...(from ? { from } : {}),
+                  ...(to ? { to } : {}),
+                  ...(agentId && agentId !== "all" ? { agentId } : {}),
+                  ...(showDeleted ? { show: "deleted" } : {}),
+                }).toString()}`}
+              >
+                <Download className="h-4 w-4" /> Export
+              </a>
+            </Button>
+          )}
           {isAdmin && !showDeleted && (
             <Button variant="outline" asChild>
               <Link href="/enquiries?show=deleted">
